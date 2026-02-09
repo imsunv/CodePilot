@@ -45,14 +45,7 @@ export function ConnectionStatus() {
     <>
       <button
         onClick={() => setDialogOpen(true)}
-        className={cn(
-          "flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium transition-colors",
-          status === null
-            ? "bg-muted text-muted-foreground"
-            : connected
-              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-              : "bg-red-500/15 text-red-700 dark:text-red-400"
-        )}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-accent"
       >
         <span
           className={cn(
@@ -64,11 +57,6 @@ export function ConnectionStatus() {
                 : "bg-red-500"
           )}
         />
-        {status === null
-          ? "Checking"
-          : connected
-            ? "Connected"
-            : "Disconnected"}
       </button>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

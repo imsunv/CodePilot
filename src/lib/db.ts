@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import crypto from 'crypto';
-import type { ChatSession, Message, SettingsMap, TaskItem, TaskStatus, ApiProvider, CreateProviderRequest, UpdateProviderRequest } from '@/types';
+import type { ChatSession, Message, SettingsMap, TaskItem, TaskStatus, ApiProvider, CreateProviderRequest, UpdateProviderRequest, Project } from '@/types';
 
 const dataDir = process.env.CLAUDE_GUI_DATA_DIR || path.join(require('os').homedir(), '.codepilot');
 const DB_PATH = path.join(dataDir, 'codepilot.db');
@@ -109,10 +109,20 @@ function initDb(db: Database.Database): void {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      working_directory TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
     CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON chat_sessions(updated_at);
     CREATE INDEX IF NOT EXISTS idx_tasks_session_id ON tasks(session_id);
+    CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
   `);
 
   // Run migrations for existing databases
@@ -149,6 +159,9 @@ function migrateDb(db: Database.Database): void {
   }
   if (!colNames.includes('mode')) {
     db.exec("ALTER TABLE chat_sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'code'");
+  }
+  if (!colNames.includes('project_id')) {
+    db.exec("ALTER TABLE chat_sessions ADD COLUMN project_id TEXT NOT NULL DEFAULT ''");
   }
 
   const msgColumns = db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
@@ -190,6 +203,19 @@ function migrateDb(db: Database.Database): void {
     );
   `);
 
+  // Ensure projects table exists for databases created before this migration
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      working_directory TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+  `);
+
   // Migrate existing settings to a default provider if api_providers is empty
   const providerCount = db.prepare('SELECT COUNT(*) as count FROM api_providers').get() as { count: number };
   if (providerCount.count === 0) {
@@ -225,6 +251,7 @@ export function createSession(
   systemPrompt?: string,
   workingDirectory?: string,
   mode?: string,
+  projectId?: string,
 ): ChatSession {
   const db = getDb();
   const id = crypto.randomBytes(16).toString('hex');
@@ -233,8 +260,8 @@ export function createSession(
   const projectName = path.basename(wd);
 
   db.prepare(
-    'INSERT INTO chat_sessions (id, title, created_at, updated_at, model, system_prompt, working_directory, sdk_session_id, project_name, status, mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, title || 'New Chat', now, now, model || '', systemPrompt || '', wd, '', projectName, 'active', mode || 'code');
+    'INSERT INTO chat_sessions (id, title, created_at, updated_at, model, system_prompt, working_directory, sdk_session_id, project_name, project_id, status, mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, title || 'New Chat', now, now, model || '', systemPrompt || '', wd, '', projectName, projectId || '', 'active', mode || 'code');
 
   return getSession(id)!;
 }
@@ -482,6 +509,87 @@ export function activateProvider(id: string): boolean {
 export function deactivateAllProviders(): void {
   const db = getDb();
   db.prepare('UPDATE api_providers SET is_active = 0').run();
+}
+
+// ==========================================
+// Project Operations
+// ==========================================
+
+export function getAllProjects(): Project[] {
+  const db = getDb();
+  return db.prepare("SELECT * FROM projects WHERE status = 'active' ORDER BY updated_at DESC").all() as Project[];
+}
+
+export function getProject(id: string): Project | undefined {
+  const db = getDb();
+  return db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as Project | undefined;
+}
+
+export function getProjectByDirectory(workingDirectory: string): Project | undefined {
+  const db = getDb();
+  return db.prepare('SELECT * FROM projects WHERE working_directory = ?').get(workingDirectory) as Project | undefined;
+}
+
+export function createProject(name: string, workingDirectory: string): Project {
+  const db = getDb();
+  const id = crypto.randomBytes(16).toString('hex');
+  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
+
+  db.prepare(
+    'INSERT INTO projects (id, name, working_directory, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(id, name, workingDirectory, 'active', now, now);
+
+  return getProject(id)!;
+}
+
+export function updateProject(id: string, updates: { name?: string }): Project | undefined {
+  const db = getDb();
+  const existing = getProject(id);
+  if (!existing) return undefined;
+
+  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
+  const name = updates.name ?? existing.name;
+
+  db.prepare(
+    'UPDATE projects SET name = ?, updated_at = ? WHERE id = ?'
+  ).run(name, now, id);
+
+  return getProject(id);
+}
+
+export function archiveProject(id: string): boolean {
+  const db = getDb();
+  const existing = getProject(id);
+  if (!existing) return false;
+
+  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
+  const transaction = db.transaction(() => {
+    db.prepare("UPDATE projects SET status = 'archived', updated_at = ? WHERE id = ?").run(now, id);
+    db.prepare("UPDATE chat_sessions SET project_id = '' WHERE project_id = ?").run(id);
+  });
+  transaction();
+  return true;
+}
+
+export function updateSessionProject(sessionId: string, projectId: string): void {
+  const db = getDb();
+  db.prepare('UPDATE chat_sessions SET project_id = ? WHERE id = ?').run(projectId, sessionId);
+}
+
+export function getOrCreateProjectByDirectory(workingDirectory: string): Project {
+  const existing = getProjectByDirectory(workingDirectory);
+  if (existing) {
+    // Reactivate if archived
+    if (existing.status === 'archived') {
+      const db = getDb();
+      const now = new Date().toISOString().replace('T', ' ').split('.')[0];
+      db.prepare("UPDATE projects SET status = 'active', updated_at = ? WHERE id = ?").run(now, existing.id);
+      return getProject(existing.id)!;
+    }
+    return existing;
+  }
+  const name = path.basename(workingDirectory);
+  return createProject(name, workingDirectory);
 }
 
 // ==========================================

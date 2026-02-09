@@ -36,6 +36,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [sessionTitle, setSessionTitle] = useState("");
   const [streamingSessionId, setStreamingSessionId] = useState("");
   const [pendingApprovalSessionId, setPendingApprovalSessionId] = useState("");
+  const [activeProjectId, setActiveProjectId] = useState("");
 
   // Auto-open panel on chat detail routes, close on others
   useEffect(() => {
@@ -72,8 +73,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setStreamingSessionId,
       pendingApprovalSessionId,
       setPendingApprovalSessionId,
+      activeProjectId,
+      setActiveProjectId,
     }),
-    [panelOpen, setPanelOpen, panelContent, workingDirectory, sessionId, sessionTitle, streamingSessionId, pendingApprovalSessionId]
+    [panelOpen, setPanelOpen, panelContent, workingDirectory, sessionId, sessionTitle, streamingSessionId, pendingApprovalSessionId, activeProjectId]
   );
 
   return (

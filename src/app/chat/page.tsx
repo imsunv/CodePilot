@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Message, SSEEvent, SessionResponse, TokenUsage, PermissionRequestEvent } from '@/types';
+import type { Message, SSEEvent, SessionResponse, TokenUsage, PermissionRequestEvent, Project } from '@/types';
 import { MessageList } from '@/components/chat/MessageList';
 import { MessageInput } from '@/components/chat/MessageInput';
+import { CreateProjectDialog } from '@/components/layout/CreateProjectDialog';
 import { usePanel } from '@/hooks/usePanel';
 
 interface ToolUseInfo {
@@ -20,26 +21,51 @@ interface ToolResultInfo {
 
 export default function NewChatPage() {
   const router = useRouter();
-  const { setWorkingDirectory, setPanelOpen, setPendingApprovalSessionId } = usePanel();
+  const { workingDirectory, setWorkingDirectory, setPanelOpen, setPendingApprovalSessionId, activeProjectId, setActiveProjectId } = usePanel();
   const [messages, setMessages] = useState<Message[]>([]);
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [toolUses, setToolUses] = useState<ToolUseInfo[]>([]);
   const [toolResults, setToolResults] = useState<ToolResultInfo[]>([]);
   const [statusText, setStatusText] = useState<string | undefined>();
-  const [workingDir, setWorkingDir] = useState('');
   const [mode, setMode] = useState('code');
   const [currentModel, setCurrentModel] = useState('sonnet');
   const [pendingPermission, setPendingPermission] = useState<PermissionRequestEvent | null>(null);
   const [permissionResolved, setPermissionResolved] = useState<'allow' | 'deny' | null>(null);
   const [streamingToolOutput, setStreamingToolOutput] = useState('');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const handleWorkingDirectoryChange = useCallback((dir: string) => {
-    setWorkingDir(dir);
-    setWorkingDirectory(dir);
-    setPanelOpen(true);
-  }, [setWorkingDirectory, setPanelOpen]);
+  // Load projects
+  const loadProjects = useCallback(async () => {
+    try {
+      const res = await fetch('/api/projects');
+      if (res.ok) {
+        const data = await res.json();
+        setProjects(data.projects || []);
+      }
+    } catch {
+      // silent
+    }
+  }, []);
+
+  useEffect(() => {
+    loadProjects();
+    const handler = () => loadProjects();
+    window.addEventListener('project-created', handler);
+    return () => window.removeEventListener('project-created', handler);
+  }, [loadProjects]);
+
+  const handleProjectChange = useCallback((projectId: string, projectWorkingDirectory: string) => {
+    setActiveProjectId(projectId);
+    setWorkingDirectory(projectWorkingDirectory);
+  }, [setActiveProjectId, setWorkingDirectory]);
+
+  const handleProjectCreated = useCallback((project: Project) => {
+    setActiveProjectId(project.id);
+    setWorkingDirectory(project.working_directory);
+  }, [setActiveProjectId, setWorkingDirectory]);
 
   const stopStreaming = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -82,7 +108,7 @@ export default function NewChatPage() {
 
   const sendFirstMessage = useCallback(
     async (content: string) => {
-      if (isStreaming) return;
+      if (isStreaming || !activeProjectId) return;
 
       setIsStreaming(true);
       setStreamingContent('');
@@ -96,13 +122,14 @@ export default function NewChatPage() {
       let sessionId = '';
 
       try {
-        // Create a new session with optional working directory
+        // Create a new session with working directory from active project
         const createBody: Record<string, string> = {
           title: content.slice(0, 50),
           mode,
+          project_id: activeProjectId,
         };
-        if (workingDir.trim()) {
-          createBody.working_directory = workingDir.trim();
+        if (workingDirectory.trim()) {
+          createBody.working_directory = workingDirectory.trim();
         }
 
         const createRes = await fetch('/api/chat/sessions', {
@@ -304,7 +331,7 @@ export default function NewChatPage() {
         abortControllerRef.current = null;
       }
     },
-    [isStreaming, router, workingDir, mode, currentModel, setPendingApprovalSessionId]
+    [isStreaming, router, workingDirectory, mode, currentModel, setPendingApprovalSessionId, activeProjectId]
   );
 
   const handleCommand = useCallback((command: string) => {
@@ -354,19 +381,27 @@ export default function NewChatPage() {
         pendingPermission={pendingPermission}
         onPermissionResponse={handlePermissionResponse}
         permissionResolved={permissionResolved}
+        projects={projects}
+        activeProjectId={activeProjectId}
+        onProjectChange={handleProjectChange}
+        onAddProject={() => setCreateProjectOpen(true)}
       />
       <MessageInput
         onSend={sendFirstMessage}
         onCommand={handleCommand}
         onStop={stopStreaming}
-        disabled={false}
+        disabled={!activeProjectId}
         isStreaming={isStreaming}
         modelName={currentModel}
         onModelChange={setCurrentModel}
-        workingDirectory={workingDir}
-        onWorkingDirectoryChange={handleWorkingDirectoryChange}
+        workingDirectory={workingDirectory}
         mode={mode}
         onModeChange={setMode}
+      />
+      <CreateProjectDialog
+        open={createProjectOpen}
+        onOpenChange={setCreateProjectOpen}
+        onCreated={handleProjectCreated}
       />
     </div>
   );

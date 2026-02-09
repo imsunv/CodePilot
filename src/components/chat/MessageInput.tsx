@@ -5,7 +5,6 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   AtIcon,
   DivideSignIcon,
-  FolderOpenIcon,
   Wrench01Icon,
   ClipboardIcon,
   HelpCircleIcon,
@@ -15,7 +14,6 @@ import {
   Cancel01Icon,
 } from "@hugeicons/core-free-icons";
 import { cn } from '@/lib/utils';
-import { FolderPicker } from './FolderPicker';
 import {
   PromptInput,
   PromptInputTextarea,
@@ -52,7 +50,6 @@ interface MessageInputProps {
   modelName?: string;
   onModelChange?: (model: string) => void;
   workingDirectory?: string;
-  onWorkingDirectoryChange?: (dir: string) => void;
   mode?: string;
   onModeChange?: (mode: string) => void;
 }
@@ -285,7 +282,6 @@ export function MessageInput({
   modelName,
   onModelChange,
   workingDirectory,
-  onWorkingDirectoryChange,
   mode = 'code',
   onModeChange,
 }: MessageInputProps) {
@@ -299,7 +295,6 @@ export function MessageInput({
   const [popoverFilter, setPopoverFilter] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [triggerPos, setTriggerPos] = useState<number | null>(null);
-  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
@@ -689,10 +684,6 @@ export function MessageInput({
   const currentModelOption = MODEL_OPTIONS.find((m) => m.value === currentModelValue) || MODEL_OPTIONS[0];
   const currentMode = MODE_OPTIONS.find((m) => m.value === mode) || MODE_OPTIONS[0];
 
-  const folderShortName = workingDirectory
-    ? workingDirectory.split('/').filter(Boolean).pop() || workingDirectory
-    : '';
-
   // Map isStreaming to ChatStatus for PromptInputSubmit
   const chatStatus: ChatStatus = isStreaming ? 'streaming' : 'ready';
 
@@ -788,17 +779,6 @@ export function MessageInput({
                 {/* Attach file button */}
                 <AttachFileButton />
 
-                {/* Folder picker button */}
-                <PromptInputButton
-                  onClick={() => setFolderPickerOpen(true)}
-                  tooltip={workingDirectory || 'Select project folder'}
-                >
-                  <HugeiconsIcon icon={FolderOpenIcon} className="h-3.5 w-3.5" />
-                  <span className="max-w-[120px] truncate text-xs">
-                    {folderShortName || 'Folder'}
-                  </span>
-                </PromptInputButton>
-
                 {/* Mode selector */}
                 <div className="relative" ref={modeMenuRef}>
                   <PromptInputButton
@@ -892,15 +872,6 @@ export function MessageInput({
         </div>
       </div>
 
-      {/* FolderPicker dialog */}
-      <FolderPicker
-        open={folderPickerOpen}
-        onOpenChange={setFolderPickerOpen}
-        onSelect={(dir) => {
-          onWorkingDirectoryChange?.(dir);
-        }}
-        initialPath={workingDirectory || undefined}
-      />
     </div>
   );
 }

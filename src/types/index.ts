@@ -12,10 +12,32 @@ export interface ChatSession {
   working_directory: string;
   sdk_session_id: string; // Claude Agent SDK session ID for resume
   project_name: string;
+  project_id: string;
   status: 'active' | 'archived';
   mode?: 'code' | 'plan' | 'ask';
   needs_approval?: boolean;
 }
+
+export interface Project {
+  id: string;
+  name: string;
+  working_directory: string;
+  status: 'active' | 'archived';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateProjectRequest {
+  name?: string;
+  working_directory: string;
+}
+
+export interface UpdateProjectRequest {
+  name?: string;
+}
+
+export interface ProjectsResponse { projects: Project[]; }
+export interface ProjectResponse { project: Project; }
 
 // ==========================================
 // Project / File Types
@@ -160,6 +182,7 @@ export interface CreateSessionRequest {
   system_prompt?: string;
   working_directory?: string;
   mode?: string;
+  project_id?: string;
 }
 
 export interface SendMessageRequest {

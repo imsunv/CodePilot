@@ -19,6 +19,8 @@ export interface PanelContextValue {
   setStreamingSessionId: (id: string) => void;
   pendingApprovalSessionId: string;
   setPendingApprovalSessionId: (id: string) => void;
+  activeProjectId: string;
+  setActiveProjectId: (id: string) => void;
 }
 
 export const PanelContext = createContext<PanelContextValue | null>(null);

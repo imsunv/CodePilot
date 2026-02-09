@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { parseClaudeSession } from '@/lib/claude-session-parser';
-import { createSession, addMessage, updateSdkSessionId, getAllSessions } from '@/lib/db';
+import { createSession, addMessage, updateSdkSessionId, getAllSessions, getOrCreateProjectByDirectory, updateSessionProject } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
   try {
@@ -61,6 +61,13 @@ export async function POST(request: NextRequest) {
 
     // Store the original Claude Code SDK session ID so the conversation can be resumed
     updateSdkSessionId(session.id, sessionId);
+
+    // Auto-associate with project based on working directory
+    const cwd = info.cwd || info.projectPath;
+    if (cwd) {
+      const project = getOrCreateProjectByDirectory(cwd);
+      updateSessionProject(session.id, project.id);
+    }
 
     // Import all messages
     for (const msg of messages) {
