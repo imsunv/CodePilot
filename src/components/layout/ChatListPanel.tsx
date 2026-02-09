@@ -441,20 +441,20 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
               onClick={() => toggleProject(project.id)}
               className="flex flex-1 items-center gap-1.5 min-w-0 py-1 px-1.5 rounded hover:bg-accent/50 transition-colors"
             >
-              <span className="relative h-3 w-3 shrink-0">
+              <span className="relative h-3.5 w-3.5 shrink-0">
                 <HugeiconsIcon
                   icon={FolderOpenIcon}
-                  className="h-3 w-3 text-muted-foreground absolute inset-0 group-hover/project:opacity-0 transition-opacity"
+                  className="h-3.5 w-3.5 text-muted-foreground absolute inset-0 group-hover/project:opacity-0 transition-opacity"
                 />
                 <HugeiconsIcon
                   icon={isExpanded ? ArrowDown01Icon : ArrowRight01Icon}
-                  className="h-3 w-3 text-muted-foreground absolute inset-0 opacity-0 group-hover/project:opacity-100 transition-opacity"
+                  className="h-3.5 w-3.5 text-muted-foreground absolute inset-0 opacity-0 group-hover/project:opacity-100 transition-opacity"
                 />
               </span>
-              <span className="text-[12px] font-medium truncate text-sidebar-foreground">
+              <span className="text-[13px] font-medium truncate text-sidebar-foreground">
                 {project.name}
               </span>
-              <span className="text-[10px] text-muted-foreground/40 shrink-0">
+              <span className="text-[11px] text-muted-foreground/40 shrink-0">
                 {projectSessions.length}
               </span>
             </button>
@@ -466,7 +466,7 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
                   size="icon-xs"
                   className="opacity-0 group-hover/project:opacity-100 shrink-0 text-muted-foreground/60"
                 >
-                  <HugeiconsIcon icon={MoreVerticalIcon} className="h-3 w-3" />
+                  <HugeiconsIcon icon={MoreVerticalIcon} className="h-3.5 w-3.5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-36">
@@ -565,6 +565,20 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
             </TooltipTrigger>
             <TooltipContent side="bottom">New Project</TooltipContent>
           </Tooltip>
+          {/* Import CLI Session 按钮 */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setImportDialogOpen(true)}
+              >
+                <HugeiconsIcon icon={FileImportIcon} className="h-3.5 w-3.5" />
+                <span className="sr-only">Import CLI Session</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Import CLI Session</TooltipContent>
+          </Tooltip>
           <OrganizeDropdown
             organize={organize}
             sortBy={sortBy}
@@ -589,26 +603,6 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
             className="h-8 pl-7 text-xs"
           />
         </div>
-      </div>
-
-      {/* Import CLI Session */}
-      <div className="px-3 pb-1">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start gap-2 h-7 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setImportDialogOpen(true)}
-            >
-              <HugeiconsIcon icon={FileImportIcon} className="h-3 w-3" />
-              Import CLI Session
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right">
-            Import conversations from Claude Code CLI
-          </TooltipContent>
-        </Tooltip>
       </div>
 
       {/* Chat sessions list */}

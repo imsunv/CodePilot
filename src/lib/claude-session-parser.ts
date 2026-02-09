@@ -72,6 +72,23 @@ export interface ParsedSession {
   messages: ParsedMessage[];
 }
 
+export interface ListSessionsOptions {
+  page?: number;
+  limit?: number;
+  search?: string;
+}
+
+export interface ListSessionsResult {
+  sessions: ClaudeSessionInfo[];
+  pagination: {
+    currentPage: number;
+    pageSize: number;
+    totalCount: number;
+    totalPages: number;
+    hasMore: boolean;
+  };
+}
+
 // Raw JSONL entry types
 interface JournalEntry {
   type: string;
@@ -158,17 +175,44 @@ export function decodeProjectPath(encodedName: string): string {
 }
 
 /**
- * List all available Claude Code CLI sessions.
+ * List all available Claude Code CLI sessions with pagination and search.
  * Scans ~/.claude/projects/ for .jsonl files and extracts metadata.
+ *
+ * Performance optimization: Only parses file metadata for the current page,
+ * not all sessions, which is crucial for large session counts.
  */
-export function listClaudeSessions(): ClaudeSessionInfo[] {
+export function listClaudeSessions(options: ListSessionsOptions = {}): ListSessionsResult {
+  const { page = 1, limit = 50, search } = options;
+
+  // Normalize pagination parameters
+  const currentPage = Math.max(1, page);
+  const pageSize = Math.min(100, Math.max(1, limit));
+
   const projectsDir = getClaudeProjectsDir();
 
   if (!fs.existsSync(projectsDir)) {
-    return [];
+    return {
+      sessions: [],
+      pagination: {
+        currentPage,
+        pageSize,
+        totalCount: 0,
+        totalPages: 0,
+        hasMore: false,
+      },
+    };
   }
 
-  const sessions: ClaudeSessionInfo[] = [];
+  // Phase 1: Fast scan - collect file metadata (path + mtime) without parsing JSONL
+  interface SessionFileInfo {
+    filePath: string;
+    sessionId: string;
+    projectPath: string;
+    projectName: string;
+    mtime: number;
+  }
+
+  const allFiles: SessionFileInfo[] = [];
 
   try {
     const projectDirs = fs.readdirSync(projectsDir, { withFileTypes: true });
@@ -188,12 +232,17 @@ export function listClaudeSessions(): ClaudeSessionInfo[] {
           const sessionId = jsonlFile.replace('.jsonl', '');
 
           try {
-            const info = extractSessionInfo(filePath, sessionId, decodedPath);
-            if (info) {
-              sessions.push(info);
-            }
+            const stat = fs.statSync(filePath);
+
+            allFiles.push({
+              filePath,
+              sessionId,
+              projectPath: decodedPath,
+              projectName: path.basename(decodedPath),
+              mtime: stat.mtimeMs,
+            });
           } catch {
-            // Skip files that can't be parsed
+            // Skip files that can't be stat'd
           }
         }
       } catch {
@@ -204,10 +253,82 @@ export function listClaudeSessions(): ClaudeSessionInfo[] {
     // Projects directory can't be read
   }
 
-  // Sort by most recent first
-  sessions.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  // Phase 2: Search filtering
+  let filteredFiles = allFiles;
 
-  return sessions;
+  if (search && search.trim()) {
+    const searchLower = search.toLowerCase();
+
+    // First pass: Quick filter by filename and project name
+    const quickFiltered = allFiles.filter(f =>
+      f.projectName.toLowerCase().includes(searchLower) ||
+      f.sessionId.toLowerCase().includes(searchLower)
+    );
+
+    // Second pass: Deep search in JSONL content for remaining files
+    const deepSearchCandidates = allFiles.filter(f => !quickFiltered.includes(f));
+    const deepFiltered: SessionFileInfo[] = [];
+
+    for (const fileInfo of deepSearchCandidates) {
+      try {
+        const stat = fs.statSync(fileInfo.filePath);
+        if (stat.size > MAX_FILE_SIZE) continue;
+
+        const content = fs.readFileSync(fileInfo.filePath, 'utf-8');
+        const contentLower = content.toLowerCase();
+
+        // Search in preview, cwd, gitBranch fields
+        if (contentLower.includes(searchLower)) {
+          deepFiltered.push(fileInfo);
+        }
+      } catch {
+        // Skip files that can't be read
+      }
+    }
+
+    filteredFiles = [...quickFiltered, ...deepFiltered];
+  }
+
+  // Phase 3: Sort by mtime descending (most recent first)
+  filteredFiles.sort((a, b) => b.mtime - a.mtime);
+
+  // Calculate pagination
+  const totalCount = filteredFiles.length;
+  const totalPages = Math.ceil(totalCount / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+
+  // Phase 4: Slice for current page
+  const pageFiles = filteredFiles.slice(startIndex, endIndex);
+
+  // Phase 5: Only parse JSONL for the current page
+  const sessions: ClaudeSessionInfo[] = [];
+
+  for (const fileInfo of pageFiles) {
+    try {
+      const info = extractSessionInfo(
+        fileInfo.filePath,
+        fileInfo.sessionId,
+        fileInfo.projectPath
+      );
+      if (info) {
+        sessions.push(info);
+      }
+    } catch {
+      // Skip files that can't be parsed
+    }
+  }
+
+  return {
+    sessions,
+    pagination: {
+      currentPage,
+      pageSize,
+      totalCount,
+      totalPages,
+      hasMore: currentPage < totalPages,
+    },
+  };
 }
 
 /**
